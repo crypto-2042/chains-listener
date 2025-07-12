@@ -1,0 +1,156 @@
+# Chains-Listener Configuration
+# Multi-chain event monitoring configuration file
+
+[database]
+redis_url = "redis://localhost:6379"
+connection_pool_size = 10
+
+[logging]
+level = "info"
+format = "json"
+correlation_tracking = true
+
+# Chain-specific configurations
+# Using free public RPC endpoints - no API keys required
+# 
+# IMPORTANT NOTES:
+# - Free endpoints may have rate limits (typically 1-10 req/sec)
+# - For production use, consider upgrading to paid tiers
+# - Alternative endpoints are provided as comments for redundancy
+# - Some endpoints may experience temporary outages
+# 
+# ENDPOINT PROVIDERS:
+# - publicnode.com: High-quality free infrastructure
+# - ankr.com: Reliable multi-chain RPC service  
+# - binance.org: Official BSC endpoints
+# - Official chain endpoints: Best for primary usage
+
+[chains.ethereum]
+rpc_url = "https://eth.public-rpc.com"
+websocket_url = "wss://ethereum-rpc.publicnode.com"
+# Alternative free endpoints:
+# rpc_url = "https://rpc.ankr.com/eth"
+# rpc_url = "https://ethereum-rpc.publicnode.com"
+# websocket_url = "wss://eth.public-rpc.com"
+chain_id = 1
+block_confirmation_count = 12
+max_retry_attempts = 3
+
+[chains.bsc]
+rpc_url = "https://bsc-dataseed1.binance.org"
+websocket_url = "wss://bsc-rpc.publicnode.com"
+# Alternative free endpoints:
+# rpc_url = "https://bsc-dataseed2.binance.org"
+# rpc_url = "https://rpc.ankr.com/bsc"
+# rpc_url = "https://bsc-rpc.publicnode.com"
+chain_id = 56
+block_confirmation_count = 6
+max_retry_attempts = 3
+
+[chains.trx]
+rpc_url = "https://api.tron.network"
+websocket_url = "wss://api.tron.network"
+# Alternative free endpoints:
+# rpc_url = "https://api.trongrid.io"
+# rpc_url = "https://trx.getblock.io/api/free"
+chain_id = 728126428
+block_confirmation_count = 19
+max_retry_attempts = 3
+
+[chains.solana]
+rpc_url = "https://api.mainnet-beta.solana.com"
+websocket_url = "wss://api.mainnet-beta.solana.com"
+# Alternative free endpoints:
+# rpc_url = "https://solana-api.projectserum.com"
+# rpc_url = "https://rpc.ankr.com/solana"
+# rpc_url = "https://solana-rpc.publicnode.com"
+commitment = "confirmed"
+max_retry_attempts = 3
+
+[chains.sui]
+rpc_url = "https://fullnode.mainnet.sui.io"
+websocket_url = "wss://fullnode.mainnet.sui.io"
+# Alternative free endpoints:
+# rpc_url = "https://sui-rpc.publicnode.com"
+# rpc_url = "https://rpc.ankr.com/sui"
+max_retry_attempts = 3
+
+[chains.bitcoin]
+rpc_url = "https://bitcoin-mainnet.public.blastapi.io"
+websocket_url = "wss://bitcoin-mainnet.public.blastapi.io"
+# Alternative free endpoints:
+# rpc_url = "https://api.blockcypher.com/v1/btc/main"
+# rpc_url = "https://bitcoin-rpc.publicnode.com"
+# rpc_url = "https://rpc.ankr.com/btc"
+max_retry_attempts = 3
+
+# Event monitoring configurations
+[monitoring.transfers]
+enabled = true
+batch_size = 100
+polling_interval_ms = 5000
+confirmation_blocks = 6
+
+[monitoring.token_minting]
+enabled = true
+batch_size = 50
+polling_interval_ms = 3000
+confirmation_blocks = 12
+
+# User-configurable monitoring targets
+[targets.addresses]
+watch_addresses = [
+    "0x742D35Cc6634C0532925a3b8D9C9e0aE8e123456",
+    "0x123456789abcdef123456789abcdef123456789a"
+]
+
+[targets.contracts]
+erc20_contracts = [
+    "0xA0b86a33E6D5a0A2b0b86a33E6D5a0A2b0b86a33",
+    "0xB1c97a44F6E6b1c97a44F6E6b1c97a44F6E6b1c9"
+]
+
+erc721_contracts = [
+    "0xC2d8b55F7C2d8b55F7C2d8b55F7C2d8b55F7C2d8",
+    "0xD3e9c66G8D3e9c66G8D3e9c66G8D3e9c66G8D3e9"
+]
+
+# TRC-20 and TRC-721 contracts for TRON (TRX)
+trc20_contracts = [
+    "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+    "TLa2f6VPqDgRE67v1736s7bJ8Ray5wYjU7"
+]
+
+trc721_contracts = [
+    "TKzxdSv2FZKQrEqkKVgp5DcwEXBEKMg2Ax"
+]
+
+spl_token_programs = [
+    "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+    "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+]
+
+# Filter configurations
+[filters.transfer]
+min_amount = "0.1"
+max_amount = "1000000"
+exclude_self_transfers = true
+include_failed_transactions = false
+
+[filters.token_minting]
+min_mint_amount = "100"
+track_burn_events = true
+only_new_tokens = false
+
+# Notification settings
+[notifications]
+enabled = true
+channels = ["webhook", "redis_pubsub"]
+webhook_url = "https://your-app.com/webhook"
+redis_channel = "blockchain_events"
+
+[performance]
+worker_pool_size = 4
+max_concurrent_requests = 50
+request_timeout_ms = 30000
+circuit_breaker_threshold = 10
