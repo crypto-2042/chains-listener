@@ -1,5 +1,5 @@
-import { EventEmitter } from "events";
-import type { BlockchainEvent, ChainType, EventType } from "@/types/events";
+import { EventEmitter } from "node:events";
+import type { BlockchainEvent, ChainType, EventType } from "../../types/events";
 
 export interface ChainAdapterConfig {
 	rpcUrl: string;
@@ -17,11 +17,62 @@ export interface ConnectionStatus {
 	errors: string[];
 }
 
+// Enhanced configuration for individual contract customization
+export interface CustomFilterRule {
+	field: string; // e.g., "from", "to", "amount", "tokenSymbol"
+	operator:
+		| "equals"
+		| "not_equals"
+		| "greater_than"
+		| "less_than"
+		| "contains"
+		| "regex";
+	value: string | number;
+	description?: string;
+}
+
+export interface TargetFilterConfiguration {
+	// Amount-based filters
+	minAmount?: string;
+	maxAmount?: string;
+
+	// Transaction filters
+	excludeSelfTransfers?: boolean;
+	includeFailedTransactions?: boolean;
+
+	// Token-specific filters
+	minMintAmount?: string;
+	trackBurnEvents?: boolean;
+	onlyNewTokens?: boolean;
+
+	// Custom filtering rules
+	customRules?: CustomFilterRule[];
+
+	// Performance options
+	batchSize?: number;
+	pollingIntervalMs?: number;
+	confirmationBlocks?: number;
+}
+
+// Original interface for backward compatibility
 export interface MonitoringTarget {
 	type: "address" | "contract" | "token";
 	address: string;
 	eventTypes: EventType[];
 	metadata?: Record<string, unknown>;
+}
+
+// Enhanced interface with individual customization support
+export interface EnhancedMonitoringTarget extends MonitoringTarget {
+	id: string;
+	name?: string;
+	enabled?: boolean;
+	tags?: string[];
+	description?: string;
+	priority?: "low" | "medium" | "high";
+	notificationChannels?: string[];
+	filters?: TargetFilterConfiguration;
+	chains?: string[]; // Specific chains this target applies to
 }
 
 export abstract class IChainAdapter extends EventEmitter {
@@ -94,7 +145,7 @@ export abstract class IChainAdapter extends EventEmitter {
 				lastError = error instanceof Error ? error : new Error(String(error));
 
 				if (attempt < this.config.maxRetryAttempts) {
-					const delay = Math.min(1000 * Math.pow(2, attempt), 30000);
+					const delay = Math.min(1000 * 2 ** attempt, 30000);
 					await this.sleep(delay);
 
 					this.emit(

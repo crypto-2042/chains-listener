@@ -1,10 +1,10 @@
-import { EventEmitter } from "events";
-import type { EventPipeline } from "@/events/event-processor.interface";
+import { EventEmitter } from "node:events";
+import type { EventPipeline } from "../../events/event-processor.interface";
 import type {
 	BlockchainEvent,
 	ChainType,
 	ProcessedEvent,
-} from "@/types/events";
+} from "../../types/events";
 import type config from "@/config.toml";
 type Config = typeof config;
 import type {
@@ -12,6 +12,13 @@ import type {
 	IChainAdapter,
 	MonitoringTarget,
 } from "./chain-adapter.interface";
+
+// Import all chain adapters
+import { EthereumAdapter, BSCAdapter } from "../evm";
+import { SolanaAdapter } from "../solana";
+import { SuiAdapter } from "../sui";
+import { TronAdapter } from "../tron";
+import { BitcoinAdapter } from "../bitcoin";
 
 export interface ChainManagerConfig {
 	maxConcurrentConnections: number;
@@ -279,6 +286,78 @@ export class ChainManager extends EventEmitter {
 		return this.eventPipeline;
 	}
 
+	/**
+	 * Create and register all supported chain adapters
+	 */
+	public initializeAllAdapters(): void {
+		try {
+			// Initialize Ethereum adapter
+			const ethereumAdapter = new EthereumAdapter();
+			this.registerAdapter(ethereumAdapter);
+
+			// Initialize BSC adapter
+			const bscAdapter = new BSCAdapter();
+			this.registerAdapter(bscAdapter);
+
+			// Initialize Solana adapter
+			const solanaAdapter = new SolanaAdapter();
+			this.registerAdapter(solanaAdapter);
+
+			// Initialize Sui adapter
+			const suiAdapter = new SuiAdapter();
+			this.registerAdapter(suiAdapter);
+
+			// Initialize Tron adapter
+			const tronAdapter = new TronAdapter();
+			this.registerAdapter(tronAdapter);
+
+			// Initialize Bitcoin adapter
+			const bitcoinAdapter = new BitcoinAdapter();
+			this.registerAdapter(bitcoinAdapter);
+
+			this.emit("adaptersInitialized", this.adapters.size);
+		} catch (error) {
+			this.emit("adapterInitializationError", error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Initialize specific adapters based on enabled chains in config
+	 */
+	public initializeEnabledAdapters(enabledChains: ChainType[]): void {
+		try {
+			for (const chainType of enabledChains) {
+				switch (chainType) {
+					case ChainType.ETHEREUM:
+						this.registerAdapter(new EthereumAdapter());
+						break;
+					case ChainType.BSC:
+						this.registerAdapter(new BSCAdapter());
+						break;
+					case ChainType.SOLANA:
+						this.registerAdapter(new SolanaAdapter());
+						break;
+					case ChainType.SUI:
+						this.registerAdapter(new SuiAdapter());
+						break;
+					case ChainType.TRX:
+						this.registerAdapter(new TronAdapter());
+						break;
+					case ChainType.BITCOIN:
+						this.registerAdapter(new BitcoinAdapter());
+						break;
+					default:
+						console.warn(`Unknown chain type: ${chainType}`);
+				}
+			}
+			this.emit("adaptersInitialized", this.adapters.size);
+		} catch (error) {
+			this.emit("adapterInitializationError", error);
+			throw error;
+		}
+	}
+
 	public getStats(): {
 		activeChains: number;
 		connectedChains: number;
@@ -354,6 +433,14 @@ export class ChainManager extends EventEmitter {
 	public on(
 		event: "autoReconnectFailed",
 		listener: (chainType: ChainType, error: Error) => void,
+	): this;
+	public on(
+		event: "adaptersInitialized",
+		listener: (count: number) => void,
+	): this;
+	public on(
+		event: "adapterInitializationError",
+		listener: (error: Error) => void,
 	): this;
 	public on(event: string, listener: (...args: any[]) => void): this {
 		return super.on(event, listener);

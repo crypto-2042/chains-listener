@@ -1,7 +1,7 @@
-import { BaseEventNotifier } from "@/events/event-processor.interface";
-import type { ProcessedEvent } from "@/types/events";
 import config from "@/config.toml";
 import axios, { type AxiosResponse } from "axios";
+import { BaseEventNotifier } from "../events/event-processor.interface";
+import type { ProcessedEvent } from "../types/events";
 
 export interface WebhookConfig {
 	url: string;

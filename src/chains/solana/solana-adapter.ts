@@ -1,5 +1,4 @@
-import { type BlockchainEvent, ChainType, EventType } from "@/types/events";
-import config from "@/config.toml";
+import { type BlockchainEvent, ChainType, EventType } from "../../types/events";
 import {
 	type AccountChangeCallback,
 	type Commitment,
@@ -14,6 +13,16 @@ import {
 	SignatureStatus,
 } from "@solana/web3.js";
 import {
+	TOKEN_PROGRAM_ID,
+	TOKEN_2022_PROGRAM_ID,
+	getMint,
+	getAccount,
+	getAssociatedTokenAddress,
+	type Mint,
+	type Account,
+} from "@solana/spl-token";
+import config from "@/config.toml";
+import {
 	type ChainAdapterConfig,
 	type ConnectionStatus,
 	IChainAdapter,
@@ -26,6 +35,28 @@ export interface SolanaChainAdapterConfig extends ChainAdapterConfig {
 
 interface SolanaMonitoringTarget extends MonitoringTarget {
 	programId?: string;
+	tokenMint?: string;
+	associatedTokenAccount?: string;
+}
+
+interface TokenMetadata {
+	mint: string;
+	decimals: number;
+	supply: bigint;
+	mintAuthority: string | null;
+	freezeAuthority: string | null;
+	isInitialized: boolean;
+}
+
+interface SplTokenInstruction {
+	type: string;
+	data: any;
+	accounts: string[];
+	amount?: bigint;
+	authority?: string;
+	mint?: string;
+	source?: string;
+	destination?: string;
 }
 
 export class SolanaAdapter extends IChainAdapter {
@@ -37,10 +68,13 @@ export class SolanaAdapter extends IChainAdapter {
 	private heartbeatTimer?: NodeJS.Timeout;
 	public readonly chainType = ChainType.SOLANA;
 
-	private readonly SPL_TOKEN_PROGRAM_ID =
-		"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+	private readonly SPL_TOKEN_PROGRAM_ID = TOKEN_PROGRAM_ID;
+	private readonly TOKEN_2022_PROGRAM_ID = TOKEN_2022_PROGRAM_ID;
 	private readonly ASSOCIATED_TOKEN_PROGRAM_ID =
 		"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL";
+
+	// Token metadata cache
+	private tokenMetadataCache: Map<string, TokenMetadata> = new Map();
 
 	constructor() {
 		const solanaConfig: SolanaChainAdapterConfig = {
@@ -102,7 +136,7 @@ export class SolanaAdapter extends IChainAdapter {
 			throw new Error("Connection not established");
 		}
 
-		return await this.retry(() => this.connection!.getSlot(), "getCurrentSlot");
+		return await this.retry(() => this.connection?.getSlot(), "getCurrentSlot");
 	}
 
 	async addMonitoringTarget(target: MonitoringTarget): Promise<void> {
@@ -236,10 +270,37 @@ export class SolanaAdapter extends IChainAdapter {
 
 		try {
 			const accountInfo = await this.connection.getAccountInfo(publicKey);
-			if (
-				accountInfo &&
-				accountInfo.owner.equals(new PublicKey(this.SPL_TOKEN_PROGRAM_ID))
-			) {
+			
+			// Check if it's a mint account
+			if (accountInfo?.owner.equals(this.SPL_TOKEN_PROGRAM_ID) || 
+					accountInfo?.owner.equals(this.TOKEN_2022_PROGRAM_ID)) {
+				
+				// Monitor mint account changes (supply changes indicate minting)
+				const callback: AccountChangeCallback = async (
+					accountInfo,
+					context,
+				) => {
+					try {
+						await this.handleMintAccountChange(
+							target,
+							publicKey,
+							accountInfo,
+							context,
+						);
+					} catch (error) {
+						console.error("Error handling mint account change:", error);
+					}
+				};
+
+				const subscriptionId = this.connection.onAccountChange(
+					publicKey,
+					callback,
+					this.solanaConfig.commitment,
+				);
+
+				this.subscriptions.set(`mint_${target.address}`, subscriptionId);
+			} else {
+				// Monitor token account changes for transfers
 				const callback: AccountChangeCallback = async (
 					accountInfo,
 					context,
@@ -323,6 +384,64 @@ export class SolanaAdapter extends IChainAdapter {
 		this.emit("blockchainEvent", event);
 	}
 
+	private async handleMintAccountChange(
+		target: MonitoringTarget,
+		mintPublicKey: PublicKey,
+		accountInfo: any,
+		context: Context,
+	): Promise<void> {
+		try {
+			if (!accountInfo?.data || !this.connection) return;
+
+			// Get previous and current mint info to detect supply changes
+			const mintInfo = await this.getMintInfo(mintPublicKey);
+			if (!mintInfo) return;
+
+			// Get cached previous supply
+			const cacheKey = mintPublicKey.toString();
+			const previousMetadata = this.tokenMetadataCache.get(cacheKey);
+			
+			if (previousMetadata && mintInfo.supply > previousMetadata.supply) {
+				// Supply increased - minting detected
+				const mintedAmount = mintInfo.supply - previousMetadata.supply;
+				
+				const event: BlockchainEvent = {
+					id: this.generateEventId(
+						`${context.slot}_${mintPublicKey.toString()}_mint`,
+					),
+					chainType: this.chainType,
+					eventType: EventType.TOKEN_MINT,
+					blockNumber: context.slot,
+					transactionHash: `mint_${mintPublicKey.toString()}_${context.slot}`,
+					timestamp: Date.now(),
+					confirmed: true,
+					confirmationCount: 1,
+					data: {
+						tokenAddress: mintPublicKey.toString(),
+						to: target.address,
+						amount: this.formatTokenAmount(mintedAmount, mintInfo.decimals),
+						tokenDecimals: mintInfo.decimals,
+						minter: mintInfo.mintAuthority,
+						metadata: {
+							mint: mintPublicKey.toString(),
+							previousSupply: previousMetadata.supply.toString(),
+							newSupply: mintInfo.supply.toString(),
+							mintedAmount: mintedAmount.toString(),
+							programId: mintInfo.isInitialized ? this.SPL_TOKEN_PROGRAM_ID.toString() : this.TOKEN_2022_PROGRAM_ID.toString(),
+						},
+					},
+				};
+
+				this.emit("blockchainEvent", event);
+			}
+
+			// Update cache
+			this.tokenMetadataCache.set(cacheKey, mintInfo);
+		} catch (error) {
+			console.error("Error handling mint account change:", error);
+		}
+	}
+
 	private async handleTokenAccountChange(
 		target: MonitoringTarget,
 		publicKey: PublicKey,
@@ -330,31 +449,46 @@ export class SolanaAdapter extends IChainAdapter {
 		context: Context,
 	): Promise<void> {
 		try {
-			if (!accountInfo?.data) return;
+			if (!accountInfo?.data || !this.connection) return;
 
-			const event: BlockchainEvent = {
-				id: this.generateEventId(
-					`${context.slot}_${publicKey.toString()}_token`,
-				),
-				chainType: this.chainType,
-				eventType: EventType.TOKEN_MINT,
-				blockNumber: context.slot,
-				transactionHash: `token_change_${publicKey.toString()}_${context.slot}`,
-				timestamp: Date.now(),
-				confirmed: true,
-				confirmationCount: 1,
-				data: {
-					tokenAddress: publicKey.toString(),
-					to: target.address,
-					amount: "0",
-					metadata: {
-						publicKey: publicKey.toString(),
-						programId: this.SPL_TOKEN_PROGRAM_ID,
+			// Parse token account data
+			try {
+				const tokenAccount = await getAccount(this.connection, publicKey);
+				const mintInfo = await this.getMintInfo(tokenAccount.mint);
+				
+				if (!mintInfo) return;
+
+				const event: BlockchainEvent = {
+					id: this.generateEventId(
+						`${context.slot}_${publicKey.toString()}_transfer`,
+					),
+					chainType: this.chainType,
+					eventType: EventType.TRANSFER,
+					blockNumber: context.slot,
+					transactionHash: `transfer_${publicKey.toString()}_${context.slot}`,
+					timestamp: Date.now(),
+					confirmed: true,
+					confirmationCount: 1,
+					data: {
+						tokenAddress: tokenAccount.mint.toString(),
+						to: tokenAccount.owner.toString(),
+						amount: this.formatTokenAmount(tokenAccount.amount, mintInfo.decimals),
+						tokenDecimals: mintInfo.decimals,
+						metadata: {
+							tokenAccount: publicKey.toString(),
+							mint: tokenAccount.mint.toString(),
+							owner: tokenAccount.owner.toString(),
+							balance: tokenAccount.amount.toString(),
+							programId: this.SPL_TOKEN_PROGRAM_ID.toString(),
+						},
 					},
-				},
-			};
+				};
 
-			this.emit("blockchainEvent", event);
+				this.emit("blockchainEvent", event);
+			} catch (parseError) {
+				// Account might not be a token account, ignore
+				console.debug("Failed to parse as token account:", parseError);
+			}
 		} catch (error) {
 			console.error("Error handling token account change:", error);
 		}
@@ -505,22 +639,70 @@ export class SolanaAdapter extends IChainAdapter {
 		return EventType.TRANSFER;
 	}
 
+	private async getMintInfo(mintPublicKey: PublicKey): Promise<TokenMetadata | null> {
+		try {
+			if (!this.connection) return null;
+
+			// Try to get mint info from both token programs
+			try {
+				const mint = await getMint(this.connection, mintPublicKey, this.solanaConfig.commitment, this.SPL_TOKEN_PROGRAM_ID);
+				return this.convertMintToMetadata(mint);
+			} catch {
+				// Try Token-2022 program
+				try {
+					const mint = await getMint(this.connection, mintPublicKey, this.solanaConfig.commitment, this.TOKEN_2022_PROGRAM_ID);
+					return this.convertMintToMetadata(mint);
+				} catch {
+					return null;
+				}
+			}
+		} catch (error) {
+			console.error("Error getting mint info:", error);
+			return null;
+		}
+	}
+
+	private convertMintToMetadata(mint: Mint): TokenMetadata {
+		return {
+			mint: mint.address.toString(),
+			decimals: mint.decimals,
+			supply: mint.supply,
+			mintAuthority: mint.mintAuthority?.toString() || null,
+			freezeAuthority: mint.freezeAuthority?.toString() || null,
+			isInitialized: mint.isInitialized,
+		};
+	}
+
+	private formatTokenAmount(amount: bigint, decimals: number): string {
+		const divisor = BigInt(10 ** decimals);
+		const wholePart = amount / divisor;
+		const fractionalPart = amount % divisor;
+		
+		if (fractionalPart === 0n) {
+			return wholePart.toString();
+		}
+		
+		const fractionalStr = fractionalPart.toString().padStart(decimals, '0');
+		const trimmedFractional = fractionalStr.replace(/0+$/, '');
+		
+		return `${wholePart}.${trimmedFractional}`;
+	}
+
 	private async removeTargetMonitoring(address: string): Promise<void> {
 		if (!this.connection) return;
 
-		const accountSubscriptionKey = `account_${address}`;
-		const tokenSubscriptionKey = `token_${address}`;
+		const subscriptionKeys = [
+			`account_${address}`,
+			`token_${address}`,
+			`mint_${address}`
+		];
 
-		const accountSubscription = this.subscriptions.get(accountSubscriptionKey);
-		if (accountSubscription !== undefined) {
-			await this.connection.removeAccountChangeListener(accountSubscription);
-			this.subscriptions.delete(accountSubscriptionKey);
-		}
-
-		const tokenSubscription = this.subscriptions.get(tokenSubscriptionKey);
-		if (tokenSubscription !== undefined) {
-			await this.connection.removeAccountChangeListener(tokenSubscription);
-			this.subscriptions.delete(tokenSubscriptionKey);
+		for (const key of subscriptionKeys) {
+			const subscription = this.subscriptions.get(key);
+			if (subscription !== undefined) {
+				await this.connection.removeAccountChangeListener(subscription);
+				this.subscriptions.delete(key);
+			}
 		}
 	}
 
@@ -531,9 +713,9 @@ export class SolanaAdapter extends IChainAdapter {
 			async ([key, subscriptionId]) => {
 				try {
 					if (key.includes("logs")) {
-						await this.connection!.removeOnLogsListener(subscriptionId);
+						await this.connection?.removeOnLogsListener(subscriptionId);
 					} else {
-						await this.connection!.removeAccountChangeListener(subscriptionId);
+						await this.connection?.removeAccountChangeListener(subscriptionId);
 					}
 				} catch (error) {
 					console.error(`Failed to remove subscription ${key}:`, error);

@@ -3,7 +3,7 @@ import {
 	type ChainType,
 	EventData,
 	EventType,
-} from "@/types/events";
+} from "../../types/events";
 import {
 	JsonRpcProvider,
 	type Log,
@@ -111,7 +111,7 @@ export class EVMChainAdapter extends IChainAdapter {
 		}
 
 		return await this.retry(
-			() => this.provider!.getBlockNumber(),
+			() => this.provider?.getBlockNumber(),
 			"getCurrentBlockNumber",
 		);
 	}
@@ -372,12 +372,12 @@ export class EVMChainAdapter extends IChainAdapter {
 		log: Log,
 	): Promise<BlockchainEvent | null> {
 		try {
-			const receipt = await this.provider!.getTransactionReceipt(
+			const receipt = await this.provider?.getTransactionReceipt(
 				log.transactionHash,
 			);
 			if (!receipt) return null;
 
-			const transaction = await this.provider!.getTransaction(
+			const transaction = await this.provider?.getTransaction(
 				log.transactionHash,
 			);
 			if (!transaction) return null;
@@ -449,8 +449,8 @@ export class EVMChainAdapter extends IChainAdapter {
 		try {
 			if (log.topics[0] !== this.ERC20_TRANSFER_TOPIC) return null;
 
-			const from = ethers.getAddress("0x" + log.topics[1]?.slice(26));
-			const to = ethers.getAddress("0x" + log.topics[2]?.slice(26));
+			const from = ethers.getAddress(`0x${log.topics[1]?.slice(26)}`);
+			const to = ethers.getAddress(`0x${log.topics[2]?.slice(26)}`);
 			const amount = ethers.getBigInt(log.data).toString();
 
 			return { from, to, amount };
@@ -469,7 +469,7 @@ export class EVMChainAdapter extends IChainAdapter {
 					from ===
 					"0x0000000000000000000000000000000000000000000000000000000000000000"
 				) {
-					const to = ethers.getAddress("0x" + log.topics[2]?.slice(26));
+					const to = ethers.getAddress(`0x${log.topics[2]?.slice(26)}`);
 					const amount = ethers.getBigInt(log.data).toString();
 					return { to, amount };
 				}
@@ -487,7 +487,7 @@ export class EVMChainAdapter extends IChainAdapter {
 		gasPrice: string;
 	}> {
 		try {
-			const block = await this.provider!.getBlock(blockNumber);
+			const block = await this.provider?.getBlock(blockNumber);
 			return {
 				timestamp: block?.timestamp || 0,
 				gasUsed: "0",

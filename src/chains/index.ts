@@ -18,4 +18,5 @@ export {
 } from "./evm";
 export { SolanaAdapter, type SolanaChainAdapterConfig } from "./solana";
 export { SuiAdapter, type SuiChainAdapterConfig } from "./sui";
-export { TronAdapter } from "./tron";
+export { TronAdapter, type TronChainAdapterConfig } from "./tron";
+export { BitcoinAdapter, type BitcoinChainAdapterConfig } from "./bitcoin";

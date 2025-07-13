@@ -1,5 +1,5 @@
-import { ChainType } from "@/types/events";
 import config from "@/config.toml";
+import { ChainType } from "../../types/events";
 import { EVMChainAdapter, type EVMChainAdapterConfig } from "./evm-adapter";
 
 export class BSCAdapter extends EVMChainAdapter {

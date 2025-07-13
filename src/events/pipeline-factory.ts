@@ -2,8 +2,8 @@ import {
 	LoggerNotifier,
 	RedisNotifier,
 	WebhookNotifier,
-} from "@/notifications";
-import { EventType } from "@/types/events";
+} from "../notifications";
+import { EventType } from "../types/events";
 import config from "@/config.toml";
 type Config = typeof config;
 import { EventPipeline } from "./event-processor.interface";
@@ -12,16 +12,15 @@ import {
 	AmountFilter,
 	ConfirmationFilter,
 	ContractFilter,
+	CustomRulesFilter,
 	EventTypeFilter,
+	PriorityFilter,
 	SelfTransferFilter,
+	TargetAwareAmountFilter,
 } from "./filters";
 
 export class PipelineFactory {
 	private config = config;
-
-	constructor() {
-		// Config is now loaded directly from TOML import
-	}
 
 	public createDefaultPipeline(): EventPipeline {
 		const pipeline = new EventPipeline();
@@ -91,8 +90,11 @@ export class PipelineFactory {
 		addressFilter?: boolean;
 		contractFilter?: boolean;
 		amountFilter?: boolean;
+		targetAwareFilters?: boolean; // NEW: Enable target-aware filtering
 		selfTransferFilter?: boolean;
 		confirmationFilter?: boolean;
+		priorityFilter?: "low" | "medium" | "high";
+		customRulesFilter?: boolean;
 		notifications?: ("webhook" | "redis" | "logger")[];
 	}): EventPipeline {
 		const pipeline = new EventPipeline();
@@ -110,7 +112,12 @@ export class PipelineFactory {
 		}
 
 		if (options.amountFilter) {
-			pipeline.addFilter(new AmountFilter());
+			// Use target-aware amount filter if enabled, otherwise use global filter
+			if (options.targetAwareFilters) {
+				pipeline.addFilter(new TargetAwareAmountFilter());
+			} else {
+				pipeline.addFilter(new AmountFilter());
+			}
 		}
 
 		if (options.selfTransferFilter) {
@@ -123,6 +130,15 @@ export class PipelineFactory {
 					this.config.monitoring.transfers.confirmation_blocks,
 				),
 			);
+		}
+
+		// Add enhanced filters
+		if (options.priorityFilter) {
+			pipeline.addFilter(new PriorityFilter(options.priorityFilter));
+		}
+
+		if (options.customRulesFilter) {
+			pipeline.addFilter(new CustomRulesFilter());
 		}
 
 		if (options.notifications) {
@@ -146,7 +162,14 @@ export class PipelineFactory {
 			pipeline.addFilter(new ContractFilter());
 		}
 
-		pipeline.addFilter(new AmountFilter());
+		// Use target-aware amount filter if enhanced targets are configured
+		if (this.hasEnhancedTargets()) {
+			pipeline.addFilter(new TargetAwareAmountFilter());
+			pipeline.addFilter(new CustomRulesFilter());
+		} else {
+			pipeline.addFilter(new AmountFilter());
+		}
+
 		pipeline.addFilter(new SelfTransferFilter());
 		pipeline.addFilter(
 			new ConfirmationFilter(
@@ -187,10 +210,11 @@ export class PipelineFactory {
 					}
 					break;
 
-				case "logger":
+				case "logger": {
 					const loggerNotifier = new LoggerNotifier();
 					pipeline.addNotifier(loggerNotifier);
 					break;
+				}
 			}
 		}
 	}
@@ -217,5 +241,63 @@ export class PipelineFactory {
 
 	public getConfig(): Readonly<Config> {
 		return this.config;
+	}
+
+	/**
+	 * Creates an enhanced pipeline with target-aware filtering
+	 */
+	public createEnhancedPipeline(options?: {
+		eventTypes?: EventType[];
+		priorityFilter?: "low" | "medium" | "high";
+		customRulesEnabled?: boolean;
+		notifications?: ("webhook" | "redis" | "logger")[];
+	}): EventPipeline {
+		const pipeline = new EventPipeline();
+
+		// Add event type filter if specified
+		if (options?.eventTypes && options.eventTypes.length > 0) {
+			pipeline.addFilter(new EventTypeFilter(options.eventTypes));
+		}
+
+		// Add enhanced filters
+		pipeline.addFilter(new AddressFilter());
+		pipeline.addFilter(new ContractFilter());
+		pipeline.addFilter(new TargetAwareAmountFilter());
+		pipeline.addFilter(new SelfTransferFilter());
+
+		// Add priority filter if specified
+		if (options?.priorityFilter) {
+			pipeline.addFilter(new PriorityFilter(options.priorityFilter));
+		}
+
+		// Add custom rules filter if enabled
+		if (options?.customRulesEnabled !== false) {
+			pipeline.addFilter(new CustomRulesFilter());
+		}
+
+		pipeline.addFilter(
+			new ConfirmationFilter(
+				this.config.monitoring.transfers.confirmation_blocks,
+			),
+		);
+
+		// Add notifiers
+		if (options?.notifications) {
+			this.addSelectiveNotifiers(pipeline, options.notifications);
+		} else {
+			this.addDefaultNotifiers(pipeline);
+		}
+
+		return pipeline;
+	}
+
+	/**
+	 * Checks if enhanced targets are configured
+	 */
+	private hasEnhancedTargets(): boolean {
+		return Boolean(
+			this.config.targets.enhanced_targets &&
+				this.config.targets.enhanced_targets.length > 0,
+		);
 	}
 }

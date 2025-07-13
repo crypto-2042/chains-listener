@@ -93,7 +93,6 @@ This document provides a template for documenting the complete technology stack 
 ### Infrastructure & Utilities
 - **Redis v4.x** - High-performance in-memory database for caching, message queues, and temporary data storage
 - **Winston v3.x** - Extensible logging framework supporting multiple transports and log levels
-- **Zod v3.x** - Runtime type validation and schema validation
 - **Axios v1.x** - HTTP client for API requests
 - **Node-cron v3.x** - Task scheduling and cron jobs
 

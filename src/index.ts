@@ -12,7 +12,14 @@ async function main() {
 
 		const listener = new ChainsListener({
 			autoStart: true,
-			enabledChains: [ChainType.ETHEREUM, ChainType.BSC, ChainType.SOLANA, ChainType.SUI, ChainType.TRX],
+			enabledChains: [
+				ChainType.ETHEREUM,
+				ChainType.BSC,
+				ChainType.SOLANA,
+				ChainType.SUI,
+				ChainType.TRX,
+				ChainType.BITCOIN,
+			],
 		});
 
 		listener.on("starting", () => {

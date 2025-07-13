@@ -3,7 +3,7 @@ import {
 	ChainType,
 	EventType,
 	type ProcessedEvent,
-} from "@/types/events";
+} from "../types/events";
 
 export interface EventFilter {
 	id: string;
@@ -93,7 +93,7 @@ export abstract class BaseEventNotifier implements EventNotifier {
 				lastError = error instanceof Error ? error : new Error(String(error));
 
 				if (attempt < this.retryAttempts - 1) {
-					const delay = this.retryDelay * Math.pow(2, attempt);
+					const delay = this.retryDelay * 2 ** attempt;
 					await this.sleep(delay);
 				}
 			}

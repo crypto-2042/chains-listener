@@ -97,7 +97,7 @@ batch_size = 50
 polling_interval_ms = 3000
 confirmation_blocks = 12
 
-# User-configurable monitoring targets
+# Backward compatible - existing batch configuration
 [targets.addresses]
 watch_addresses = [
     "0x742D35Cc6634C0532925a3b8D9C9e0aE8e123456",
@@ -129,6 +129,181 @@ spl_token_programs = [
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
     "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
 ]
+
+# NEW: Enhanced per-target configuration for individual contract customization
+# Each target can have its own filters, monitoring settings, and notification preferences
+
+# Example 1: USDT Minting/Large Transfers monitoring (Ethereum)
+[[targets.enhanced_targets]]
+id = "usdt_ethereum_minting_monitor"
+name = "USDT Ethereum Minting Monitor"
+type = "contract"
+address = "0xdAC17F958D2ee523a2206206994597C13D831ec7"  # USDT on Ethereum
+event_types = ["transfer", "token_mint"]
+chains = ["ethereum"]
+enabled = true
+priority = "high"
+tags = ["stablecoin", "minting", "high-value"]
+description = "Monitor USDT minting and large transfers on Ethereum"
+notification_channels = ["webhook", "redis_pubsub"]
+
+# Custom filters for this target - capture minting-like large transfers
+[targets.enhanced_targets.filters]
+min_amount = "50000000.0"   # Only transfers >= 50M USDT (potential minting)
+exclude_self_transfers = false
+confirmation_blocks = 12
+
+# Custom rules to identify minting patterns
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "from"
+operator = "equals"
+value = "0xC6CDE7C39eB2f0F0095F41570af89eFC2C1Ea828"
+description = "Monitor transfers from Tether Multisig (potential minting)"
+
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "amount"
+operator = "greater_than"
+value = 100000000
+description = "Monitor very large amounts (>100M USDT)"
+
+# Additional target for monitoring Tether Treasury activity
+[[targets.enhanced_targets]]
+id = "tether_treasury_monitor"
+name = "Tether Treasury Activity Monitor"
+type = "address"
+address = "0x5754284f345afc66a98fbB0a0Afe71e0F007B949"  # Tether Treasury
+event_types = ["transfer", "native_transfer"]
+chains = ["ethereum"]
+enabled = true
+priority = "high"
+tags = ["treasury", "tether", "distribution"]
+description = "Monitor USDT distributions from Tether Treasury"
+notification_channels = ["webhook"]
+
+[targets.enhanced_targets.filters]
+min_amount = "10000000.0"   # Monitor treasury distributions >= 10M USDT
+exclude_self_transfers = false
+
+# Custom rule to monitor outgoing distributions
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "from"
+operator = "equals"
+value = "0x5754284f345afc66a98fbB0a0Afe71e0F007B949"
+description = "Monitor outgoing distributions from Tether Treasury"
+
+# Comprehensive USDT monitoring - catches all transfer patterns
+[[targets.enhanced_targets]]
+id = "usdt_comprehensive_monitor"
+name = "USDT Comprehensive Transfer Monitor"
+type = "contract"
+address = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+event_types = ["transfer"]
+chains = ["ethereum"]
+enabled = true
+priority = "medium"
+tags = ["usdt", "comprehensive"]
+description = "Comprehensive USDT transfer monitoring with minting detection"
+
+[targets.enhanced_targets.filters]
+min_amount = "1000000.0"    # Monitor all transfers >= 1M USDT
+exclude_self_transfers = false
+polling_interval_ms = 3000   # More frequent polling for USDT
+
+# Detect potential minting by monitoring transfers from known Tether addresses
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "from"
+operator = "equals"
+value = "0xC6CDE7C39eB2f0F0095F41570af89eFC2C1Ea828"
+description = "Tether Multisig - Primary minting source"
+
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "from"
+operator = "equals"
+value = "0x5754284f345afc66a98fbB0a0Afe71e0F007B949"
+description = "Tether Treasury - Secondary distribution source"
+
+# Detect very large amounts that could indicate minting
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "amount"
+operator = "greater_than"
+value = 500000000
+description = "Very large transfers (>500M USDT) - likely minting or major distribution"
+
+# Example 2: USDT minting events monitoring (Tron)
+[[targets.enhanced_targets]]
+id = "usdt_tron_minting"
+name = "USDT Tron Minting"
+type = "contract"
+address = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"  # USDT on Tron
+event_types = ["token_mint", "transfer"]
+chains = ["trx"]
+enabled = true
+priority = "high"
+tags = ["stablecoin", "minting"]
+description = "Monitor USDT minting events on Tron"
+notification_channels = ["webhook", "redis_pubsub"]
+
+[targets.enhanced_targets.filters]
+min_mint_amount = "1000000.0"  # Only mint events >= 1M USDT
+track_burn_events = true
+polling_interval_ms = 2000      # More frequent polling for important events
+
+# Custom rules for advanced filtering
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "to"
+operator = "not_equals"
+value = "0x0000000000000000000000000000000000000000"
+description = "Exclude burns (transfers to zero address)"
+
+# Example 3: Whale wallet monitoring with custom rules
+[[targets.enhanced_targets]]
+id = "whale_wallet_monitor"
+name = "Crypto Whale Monitoring"
+type = "address"
+address = "0x742D35Cc6634C0532925a3b8D9C9e0aE8e123456"
+event_types = ["transfer", "native_transfer"]
+chains = ["ethereum", "bsc"]
+enabled = true
+priority = "medium"
+tags = ["whale", "large-holder"]
+description = "Monitor transactions from known whale wallet"
+
+[targets.enhanced_targets.filters]
+min_amount = "50.0"       # Monitor transactions >= 50 tokens
+max_amount = "1000000.0"
+exclude_self_transfers = true
+
+# Custom rule: Only monitor outgoing transfers
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "from"
+operator = "equals"
+value = "0x742D35Cc6634C0532925a3b8D9C9e0aE8e123456"
+description = "Only monitor outgoing transfers from this whale"
+
+# Example 4: Small amount spam filter for a specific contract
+[[targets.enhanced_targets]]
+id = "anti_spam_token"
+name = "Anti-Spam Token Filter"
+type = "contract"
+address = "0xB1c97a44F6E6b1c97a44F6E6b1c97a44F6E6b1c9"
+event_types = ["transfer"]
+chains = ["ethereum"]
+enabled = true
+priority = "low"
+tags = ["spam-filter"]
+description = "Filter out small spam transactions for this token"
+
+[targets.enhanced_targets.filters]
+min_amount = "10.0"       # Ignore transfers < 10 tokens
+exclude_self_transfers = true
+confirmation_blocks = 6
+
+# Custom rule: Ignore transactions with very low gas price (potential spam)
+[[targets.enhanced_targets.filters.custom_rules]]
+field = "gasPrice"
+operator = "greater_than"
+value = 1000000000  # > 1 Gwei
+description = "Ignore very low gas price transactions (likely spam)"
 
 # Filter configurations
 [filters.transfer]
